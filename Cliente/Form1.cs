@@ -1,4 +1,35 @@
-﻿using System;
+﻿// ************************************************************************ 
+// Practica 07 
+// Jean Poll Cardoso Chririboga
+// Fecha de realización: 02/12/2024
+// Fecha de entrega: 04/12/2024 
+//-----------------------------------------------
+// Resultados: 
+// * Este Forms permite al usuario ingresar un usuario y contraseña para acceder a un sistema de
+// validación de placas de vehículos. Utiliza una arquitecura cliente-servidor para la comunicación
+// entre el cliente y el servidor. El servidor recibe los datos del cliente, los procesa y envía una
+// respuesta al cliente.
+// 
+//----------------------------------------------
+// Conclusiones: 
+// * Jean Poll Cardoso
+// - La integración de la clase Protocolos en el cliente centraliza la lógica de comunicación con el servidor,
+// reduciendo la duplicación de código y promoviendo una arquitectura más limpia y modular.  
+// - El uso de métodos como HazOperacion mejora la escalabilidad del sistema, ya que permite manejar
+// nuevas operaciones o comandos de manera más sencilla y organizada.
+
+//---------------------------------------------
+// Recomendaciones: 
+// * Jean Poll Cardoso
+// - Se recomienda implementar validaciones más robustas en los datos ingresados por el usuario antes de enviarlos al
+// servidor, para evitar posibles errores de formato o datos no válidos.
+// 
+// - Es importante manejar adecuadamente las excepciones en el cliente para garantizar que los errores en la comunicación
+// con el servidor no afecten la experiencia del usuario y se notifiquen de manera clara.
+// 
+// ************************************************************************
+
+using System;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
@@ -11,6 +42,7 @@ namespace Cliente
     {
         private TcpClient remoto;
         private NetworkStream flujo;
+        private Protocolos protocolo;
 
         public FrmValidador()
         {
@@ -23,229 +55,80 @@ namespace Cliente
             {
                 remoto = new TcpClient("127.0.0.1", 8080);
                 flujo = remoto.GetStream();
+                protocolo = new Protocolos(flujo);
+                panPlaca.Enabled = false;
+
             }
             catch (SocketException ex)
             {
-                MessageBox.Show("No se puedo establecer conexión " + ex.Message,
-                    "ERROR");
+                MessageBox.Show("No se pudo establecer conexión: " + ex.Message, "ERROR");
             }
-            finally 
-            {
-                flujo?.Close();
-                remoto?.Close();
-            }
-
-            panPlaca.Enabled = false;
-            chkLunes.Enabled = false;
-            chkMartes.Enabled = false;
-            chkMiercoles.Enabled = false;
-            chkJueves.Enabled = false;
-            chkViernes.Enabled = false;
-            chkDomingo.Enabled = false;
-            chkSabado.Enabled = false;
         }
 
         private void btnIniciar_Click(object sender, EventArgs e)
         {
             string usuario = txtUsuario.Text;
             string contraseña = txtPassword.Text;
-            if (usuario == "" || contraseña == "")
+
+            if (string.IsNullOrEmpty(usuario) || string.IsNullOrEmpty(contraseña))
             {
-                MessageBox.Show("Se requiere el ingreso de usuario y contraseña",
-                    "ADVERTENCIA");
+                MessageBox.Show("Se requiere el ingreso de usuario y contraseña", "ADVERTENCIA");
                 return;
             }
 
-            Pedido pedido = new Pedido
-            {
-                Comando = "INGRESO",
-                Parametros = new[] { usuario, contraseña }
-            };
-            
-            Respuesta respuesta = HazOperacion(pedido);
-            if (respuesta == null)
-            {
-                MessageBox.Show("Hubo un error", "ERROR");
-                return;
-            }
-
-            if (respuesta.Estado == "OK" && respuesta.Mensaje == "ACCESO_CONCEDIDO")
-            {
-                panPlaca.Enabled = true;
-                panLogin.Enabled = false;
-                MessageBox.Show("Acceso concedido", "INFORMACIÓN");
-                txtModelo.Focus();
-            }
-            else if (respuesta.Estado == "NOK" && respuesta.Mensaje == "ACCESO_NEGADO")
-            {
-                panPlaca.Enabled = false;
-                panLogin.Enabled = true;
-                MessageBox.Show("No se pudo ingresar, revise credenciales",
-                    "ERROR");
-                txtUsuario.Focus();
-            }
-        }
-
-        private Respuesta HazOperacion(Pedido pedido)
-        {
-            if(flujo == null)
-            {
-                MessageBox.Show("No hay conexión", "ERROR");
-                return null;
-            }
             try
             {
-                byte[] bufferTx = Encoding.UTF8.GetBytes(
-                    pedido.Comando + " " + string.Join(" ", pedido.Parametros));
-                
-                flujo.Write(bufferTx, 0, bufferTx.Length);
+                var respuesta = protocolo.HazOperacion("INGRESO", new[] { usuario, contraseña });
 
-                byte[] bufferRx = new byte[1024];
-                
-                int bytesRx = flujo.Read(bufferRx, 0, bufferRx.Length);
-                
-                string mensaje = Encoding.UTF8.GetString(bufferRx, 0, bytesRx);
-                
-                var partes = mensaje.Split(' ');
-                
-                return new Respuesta
+                if (respuesta.Estado == "OK" && respuesta.Mensaje == "ACCESO_CONCEDIDO")
                 {
-                    Estado = partes[0],
-                    Mensaje = string.Join(" ", partes.Skip(1).ToArray())
-                };
+                    panPlaca.Enabled = true;
+                    panLogin.Enabled = false;
+                    txtModelo.Focus();
+
+                    MessageBox.Show("Acceso concedido", "INFORMACIÓN");
+                }
+                else
+                {
+                    MessageBox.Show("No se pudo ingresar, revise credenciales", "ERROR");
+                }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                MessageBox.Show("Error al intentar transmitir " + ex.Message,
-                    "ERROR");
+                MessageBox.Show("Error: " + ex.Message, "ERROR");
             }
-            finally 
-            {
-                flujo?.Close();
-                remoto?.Close();
-            }
-            return null;
         }
 
         private void btnConsultar_Click(object sender, EventArgs e)
         {
-            string modelo = txtModelo.Text;
-            string marca = txtMarca.Text;
-            string placa = txtPlaca.Text;
-            
-            Pedido pedido = new Pedido
+            try
             {
-                Comando = "CALCULO",
-                Parametros = new[] { modelo, marca, placa }
-            };
-            
-            Respuesta respuesta = HazOperacion(pedido);
-            if (respuesta == null)
-            {
-                MessageBox.Show("Hubo un error", "ERROR");
-                return;
+                var respuesta = protocolo.HazOperacion("CALCULO", new[] { txtModelo.Text, txtMarca.Text, txtPlaca.Text });
+                MessageBox.Show("Respuesta recibida: " + respuesta.Mensaje, "INFORMACIÓN");
             }
-
-            if (respuesta.Estado == "NOK")
+            catch (Exception ex)
             {
-                MessageBox.Show("Error en la solicitud.", "ERROR");
-                chkLunes.Checked = false;
-                chkMartes.Checked = false;
-                chkMiercoles.Checked = false;
-                chkJueves.Checked = false;
-                chkViernes.Checked = false;
-            }
-            else
-            {
-                var partes = respuesta.Mensaje.Split(' ');
-                MessageBox.Show("Se recibió: " + respuesta.Mensaje,
-                    "INFORMACIÓN");
-                byte resultado = Byte.Parse(partes[1]);
-                switch (resultado)
-                {
-                    case 0b00100000:
-                        chkLunes.Checked = true;
-                        chkMartes.Checked = false;
-                        chkMiercoles.Checked = false;
-                        chkJueves.Checked = false;
-                        chkViernes.Checked = false;
-                        break;
-                    case 0b00010000:
-                        chkMartes.Checked = true;
-                        chkLunes.Checked = false;
-                        chkMiercoles.Checked = false;
-                        chkJueves.Checked = false;
-                        chkViernes.Checked = false;
-                        break;
-                    case 0b00001000:
-                        chkMiercoles.Checked = true;
-                        chkLunes.Checked = false;
-                        chkMartes.Checked = false;
-                        chkJueves.Checked = false;
-                        chkViernes.Checked = false;
-                        break;
-                    case 0b00000100:
-                        chkJueves.Checked = true;
-                        chkLunes.Checked = false;
-                        chkMartes.Checked = false;
-                        chkMiercoles.Checked = false;
-                        chkViernes.Checked = false;
-                        break;
-                    case 0b00000010:
-                        chkViernes.Checked = true;
-                        chkLunes.Checked = false;
-                        chkMartes.Checked = false;
-                        chkMiercoles.Checked = false;
-                        chkJueves.Checked = false;
-                        break;
-                    default:
-                        chkLunes.Checked = false;
-                        chkMartes.Checked = false;
-                        chkMiercoles.Checked = false;
-                        chkJueves.Checked = false;
-                        chkViernes.Checked = false;
-                        break;
-                }
+                MessageBox.Show("Error: " + ex.Message, "ERROR");
             }
         }
 
         private void btnNumConsultas_Click(object sender, EventArgs e)
         {
-            String mensaje = "hola";
-            
-            Pedido pedido = new Pedido
+            try
             {
-                Comando = "CONTADOR",
-                Parametros = new[] { mensaje }
-            };
-
-            Respuesta respuesta = HazOperacion(pedido);
-            if (respuesta == null)
-            {
-                MessageBox.Show("Hubo un error", "ERROR");
-                return;
+                var respuesta = protocolo.HazOperacion("CONTADOR", new string[0]);
+                MessageBox.Show($"Número de consultas: {respuesta.Mensaje}", "INFORMACIÓN");
             }
-
-            if (respuesta.Estado == "NOK")
+            catch (Exception ex)
             {
-                MessageBox.Show("Error en la solicitud.", "ERROR");
-
-            }
-            else
-            {
-                var partes = respuesta.Mensaje.Split(' ');
-                MessageBox.Show("El número de pedidos recibidos en este cliente es " + partes[0],
-                    "INFORMACIÓN");
+                MessageBox.Show("Error: " + ex.Message, "ERROR");
             }
         }
 
         private void FrmValidador_FormClosing(object sender, FormClosingEventArgs e)
         {
-            if (flujo != null)
-                flujo.Close();
-            if (remoto != null)
-                if (remoto.Connected)
-                    remoto.Close();
+            flujo?.Close();
+            remoto?.Close();
         }
     }
 }
